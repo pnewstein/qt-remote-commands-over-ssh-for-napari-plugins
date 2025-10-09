@@ -5,8 +5,8 @@ this code contains classes for messages between server and client and code to st
 import sys
 from dataclasses import dataclass, asdict
 import json
-from typing import Sequence, Literal, Callable, IO, TYPE_CHECKING
-from subprocess import Popen, PIPE
+from typing import Sequence, Callable, IO, TYPE_CHECKING
+from subprocess import Popen, PIPE, run
 from pathlib import Path
 import tempfile
 import secrets
@@ -15,14 +15,19 @@ import threading
 import queue
 import time
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+    filename="qtnap.log",
+    filemode="a",
+    format="%(asctime)s,%(msecs)03d %(name)s %(levelname)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.DEBUG,
+)
 logger = logging.getLogger(__name__)
 logger.debug("loading module")
 
 
 if TYPE_CHECKING:
     import qtpy.QtWidgets
-
 
 
 def to_string(dclass_instance) -> str:
@@ -54,10 +59,11 @@ class Response:
     error: str
 
 
-def main_loop(callback: Callable[[str], Response]):
+def main_loop(callback: Callable[[str, Path], Response]):
     """
+    callback must take the string including the request and the path to the local dir
     this is the main loop that takes in requests and emits responses
-    callback must be a dataclass
+    callback
     """
     # first initialize connection by creating a path
     while True:
@@ -80,7 +86,7 @@ def main_loop(callback: Callable[[str], Response]):
             continue
         logger.info("recieved: %s", line)
         try:
-            response = callback(line)
+            response = callback(line, session_path)
         except Exception as e:
             # If parsing or processing fails, still emit a response with error
             response = Response(out="", error=str(e))
@@ -206,7 +212,58 @@ class Client:
             raise RuntimeError("Request timed out")
         return responce
 
+    def send_file(self, local_path: Path):
+        """
+        sends file blocking until sent
+        """
+        remote_dir = self.working_path
+        if remote_dir is None:
+            raise ValueError("Uninitialized process")
+        assert remote_dir is not None
+        args = ["scp", local_path, f"{self.command[-2]}:{remote_dir}"]
+        logger.info(args)
+        output = run(
+            args,
+            check=True,
+            text=True,
+        )
+        self.error_callback(output.stdout)
+        self.error_callback(output.stderr)
+
+    def receive_file(self, remote_path: Path, local_path: Path):
+        """
+        sends file blocking until sent
+        """
+        remote_dir = self.working_path
+        assert remote_dir is not None
+        args = ["scp", f"{self.command[-2]}:{remote_dir/remote_path}", local_path]
+        logger.info(args)
+        output = run(
+            args,
+            check=True,
+            text=True,
+        )
+        self.error_callback(output.stdout)
+        self.error_callback(output.stderr)
+
+    def remote_cp(self, src_path: Path, dst_path: Path):
+        """
+        copies remote path
+        """
+        remote_dir = self.working_path
+        assert remote_dir is not None
+        args = ["scp", f"{self.command[-2]}:{remote_dir/src_path}", f"{self.command[-2]}:{remote_dir/dst_path}"]
+        logger.info(args)
+        output = run(
+            args,
+            check=True,
+            text=True,
+        )
+        self.error_callback(output.stdout)
+        self.error_callback(output.stderr)
+
     def __exit__(self, exc_type, exc, tb):
+        _ = exc_type, exc, tb
         if self.proc is None:
             raise ValueError("Uninitialized process")
         assert self.proc.stdin is not None
@@ -228,10 +285,9 @@ class ConnectionManager:
     """
 
     host_name: "qtpy.QtWidgets.QLineEdit"
-    conda: "qtpy.QtWidgets.QComboBox"
-    env: "qtpy.QtWidgets.QLineEdit"
     exe: "qtpy.QtWidgets.QLineEdit | str"
     label: "qtpy.QtWidgets.QLabel"
+    error_callback: Callable[[str], None]
     session_id: str | None = None
 
     def get_args(self) -> list[str]:
@@ -249,9 +305,34 @@ class ConnectionManager:
             exe_name,
         ]
 
+    def post_connect(self, session_id: str | None):
+        if session_id is None:
+            return
+        self.session_id = session_id
+        self.label.setText(f"Connected: {session_id}")
 
-def add_widgets(layout: "qtpy.QtWidgets.QVBoxLayout", error_callback: Callable[[str], None], exe_name="") -> ConnectionManager:
-    from qtpy.QtWidgets import QLabel, QHBoxLayout, QLineEdit, QComboBox, QPushButton
+    def enter_client(self) -> Client | None:
+        out: Client | None = Client(self.get_args(), self.error_callback)
+        try:
+            out.__enter__()
+            assert out.working_path is not None
+            session_id: str | None = out.working_path.name
+        except Exception as e:
+            logger.error("failed to start")
+            self.label.setText(f"Fail: {e}")
+            session_id = None
+        self.post_connect(session_id)
+        if session_id is None:
+            return None
+        return out
+
+
+def add_widgets(
+    layout: "qtpy.QtWidgets.QVBoxLayout",
+    error_callback: Callable[[str], None],
+    exe_name="",
+) -> ConnectionManager:
+    from qtpy.QtWidgets import QLabel, QHBoxLayout, QLineEdit, QPushButton
     from napari.qt.threading import thread_worker
 
     label = QLabel("Connect to a server")
@@ -264,17 +345,6 @@ def add_widgets(layout: "qtpy.QtWidgets.QVBoxLayout", error_callback: Callable[[
     host_name = QLineEdit()
     host_name_row.addWidget(host_name)
     layout.addLayout(host_name_row)
-    conda_row = QHBoxLayout()
-    conda_row.addWidget(QLabel("Conda executable"))
-    conda = QComboBox()
-    conda.addItems(["conda", "mamba", "micromamba"])
-    conda_row.addWidget(conda)
-    layout.addLayout(conda_row)
-    env_row = QHBoxLayout()
-    env_row.addWidget(QLabel("Environment name"))
-    env = QLineEdit()
-    env_row.addWidget(env)
-    layout.addLayout(env_row)
     if not exe_name:
         exe_row = QHBoxLayout()
         exe_row.addWidget(QLabel("Package name"))
@@ -285,7 +355,7 @@ def add_widgets(layout: "qtpy.QtWidgets.QVBoxLayout", error_callback: Callable[[
         exe = exe_name
     status = QLabel("")
     layout.addWidget(status)
-    out = ConnectionManager(host_name, conda, env, exe, status)
+    out = ConnectionManager(host_name, exe, status, error_callback)
     connect_button = QPushButton("Check connection")
 
     @thread_worker
@@ -293,7 +363,7 @@ def add_widgets(layout: "qtpy.QtWidgets.QVBoxLayout", error_callback: Callable[[
         logger.debug("started quick_connect worker")
         args = out.get_args()
         try:
-            with Client(args, print) as client:
+            with Client(args, error_callback) as client:
                 assert client.working_path is not None
                 session_id = client.working_path.name
         except Exception as e:
@@ -303,18 +373,19 @@ def add_widgets(layout: "qtpy.QtWidgets.QVBoxLayout", error_callback: Callable[[
         return session_id
 
     def post_connect(session_id: str | None):
-        logger.debug("got session id %s", session_id)
         if session_id is None:
             return
         out.session_id = session_id
         out.label.setText(f"Connected: {session_id}")
 
-    worker = quick_connect()
-    worker.returned.connect(post_connect)
     layout.addWidget(connect_button)
+
     def button_callback():
+        worker = quick_connect()
+        worker.returned.connect(post_connect)
         logger.debug("button callback")
         out.label.setText("Connecting ...")
         worker.start()
+
     connect_button.clicked.connect(button_callback)
     return out
