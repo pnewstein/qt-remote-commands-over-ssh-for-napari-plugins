@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qt-remote-commands-over-ssh-for-napari-plugins"
-version = "0.0.1"
+version = "0.1.0"
 description = "SSH JSONL messaging utilities for napari"
 authors = [
     { name = "Peter Newstein", email = "peternewstein@gmail.com" }
@@ -13,6 +13,18 @@ readme = "README.md"
 license = { text = "GPL" }
 requires-python = ">=3.10"
 dependencies = []
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+[project.urls]
+"Bug Tracker" = "https://github.com/pnewstein/qt-remote-commands-over-ssh-for-napari-plugins/issues"
+Documentation = "https://github.com/pnewstein/qt-remote-commands-over-ssh-for-napari-plugins#README.md"
+Source = "https://github.com/pnewstein/qt-remote-commands-over-ssh-for-napari-plugins"
 
 [tool.setuptools.packages.find]
 where = ["."]
