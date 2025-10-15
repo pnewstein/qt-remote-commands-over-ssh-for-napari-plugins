@@ -36,7 +36,7 @@ connection.
 
 ee the included example which demonstrates:
 
-- A napari plugin that applies a gain factor to images
+- A napari plugin that applies a gamma factor to images
 - Serializing numpy arrays and sending them to a remote server
 - Processing the data remotely and returning results
 - Adding processed images back to the napari viewer
