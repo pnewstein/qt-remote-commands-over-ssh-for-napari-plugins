@@ -52,7 +52,9 @@ class RemoteGamma(QWidget):
         self.cm = add_widgets(layout, error_callback)
         # Configure connection to local server running the processing script
         self.cm.host_name.setText("localhost")
-        self.cm.exe.setText(f"{sys.executable} \"{Path(__file__).parent/'server.py'}\"")
+        self.cm.exe.setText(
+            f"{sys.executable} \"{Path(__file__).parent/'server.py'}\""
+        )
         # add a dropdown to pick an image to process
         self.setLayout(layout)
         image_box_row = QHBoxLayout()
@@ -70,9 +72,9 @@ class RemoteGamma(QWidget):
         gamma_row.addWidget(self.gamma)
         layout.addLayout(gamma_row)
         # add a submit button
-        submit_button = QPushButton("Submit Coords")
-        submit_button.clicked.connect(self.submit)
-        layout.addWidget(submit_button)
+        self.submit_button = QPushButton("Submit Coords")
+        self.submit_button.clicked.connect(self.submit)
+        layout.addWidget(self.submit_button)
 
     def reset_image_box(self):
         """
@@ -82,7 +84,9 @@ class RemoteGamma(QWidget):
         old_value = self.image_box.currentText()
         self.image_box.clear()
         # Filter to only Image layers (excludes Points, Shapes, etc. use set to avoid repeat
-        values = set(l.name for l in self.viewer.layers if isinstance(l, Image))
+        values = set(
+            l.name for l in self.viewer.layers if isinstance(l, Image)
+        )
         self.image_box.addItems(list(values))
         if old_value in values:
             self.image_box.setCurrentText(old_value)
@@ -124,12 +128,23 @@ class RemoteGamma(QWidget):
             "name": "with gamma",
         }
 
+    def post_submit(self, add_image_kwargs: dict):
+        """
+        turn back on the submit button and add image
+        """
+        self.submit_button.setChecked(False)
+        self.submit_button.setEnabled(True)
+        viewer.add_image(**add_image_kwargs)
+
     def submit(self, *args):
         _ = args
+        # turn off the button
+        self.submit_button.setChecked(True)
+        self.submit_button.setEnabled(False)
         # Start processing in background thread to keep UI responsive
         worker: FunctionWorker = self.submit_thread()  # type: ignore
         # Add result as new layer when processing completes
-        worker.returned.connect(lambda kwargs: viewer.add_image(**kwargs))
+        worker.returned.connect(self.post_submit)
         # Re-raise exceptions on main thread for visibility
         worker.errored.connect(raise_exception)
         worker.start()
