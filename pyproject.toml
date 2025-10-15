@@ -25,3 +25,6 @@ testpaths = ["test"]
 dev = [
     "pytest",
 ]
+client = [
+    "PyQt5", "napari"
+]

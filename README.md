@@ -15,7 +15,8 @@ processing to remote servers via SSH. It provides:
 
 ## Installation 
 
-``` pip install qt-remote-commands-over-ssh-for-napari-plugins ```
+
+``` pip install qt-remote-commands-over-ssh-for-napari-plugins[client] ```
 
 ## Use Case
 
