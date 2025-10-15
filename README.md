@@ -34,7 +34,7 @@ connection.
 
 ## Example 
 
-ee the included example which demonstrates:
+See the included example which demonstrates:
 
 - A napari plugin that applies a gamma factor to images
 - Serializing numpy arrays and sending them to a remote server
