@@ -9,7 +9,9 @@ import threading
 import time
 import sys
 
-from qtpy.QtWidgets import QLineEdit, QLabel, QApplication
+from qtpy.QtWidgets import QApplication, QWidget, QVBoxLayout, QComboBox, QLineEdit
+from napari.layers import Image
+import numpy as np
 
 logging.basicConfig(
     filename="client.log",
@@ -21,13 +23,17 @@ logging.basicConfig(
 
 from qt_remote_commands_over_ssh_for_napari_plugins import (
     Response,
-    Client,
-    ConnectionManager,
     to_string,
     from_string,
     send_with_logging,
+)
+from qt_remote_commands_over_ssh_for_napari_plugins.client import (
+    Client,
+    ConnectionManager,
     stdout_stderr_reader,
-    add_widgets
+    Argument,
+    get_value_from_widget,
+    GuiBackgroundFunction,
 )
 
 HERE = Path(__file__).parent
@@ -62,7 +68,6 @@ def test_reader():
     fake_proc2 = SimpleNamespace(stderr=io.StringIO("not even json\n"), stdout=None)
     stdout_stderr_reader(fake_proc2, qout, callback, True)
     assert "not even json" in error_strings
-
 
 
 def test_client():
@@ -102,27 +107,25 @@ def test_client():
 
 
 def test_client_manager():
-    _ =  QApplication.instance() or QApplication(sys.argv)
+    _ = QApplication.instance() or QApplication(sys.argv)
     error_strings: list[str] = []
+
     def callback(value: str):
         error_strings.append(value)
-    
-    host_name = QLineEdit("localhost")
-    exe = QLineEdit(f"{sys.executable} {str(HERE / 'server.py')}")
-    label = QLabel()
-    
-    manager = ConnectionManager.create(host_name, exe, label, callback)
-    
+
+    manager = ConnectionManager.create(
+        callback, "localhost", (f"{sys.executable} {str(HERE / 'server.py')}")
+    )
+
     # Test that manager can be entered and returns a client
     with manager as client:
         assert client is not None
         assert client.working_path is not None
         assert client.working_path.exists()
         wp = client.working_path
-        assert "Connected:" in label.text()
         response = client.request("test1")
         assert not response.error
-    
+
     # Test that client persists and can be reused
     with manager as client2:
         assert client2 is client  # Same client instance reused
@@ -130,14 +133,15 @@ def test_client_manager():
         assert wp == client.working_path
         response = client2.request("test1")
         assert not response.error
-    
+
     # Test thread safety - only one thread at a time
     results = []
+
     def worker():
         with manager as client:
-            time.sleep(.05)
+            time.sleep(0.05)
             results.append(client.request("test1"))
-    
+
     thread = threading.Thread(target=worker)
     thread.start()
     with pytest.raises(RuntimeError):
@@ -146,55 +150,108 @@ def test_client_manager():
     thread.join()
     assert len(results) == 1
     assert all(not r.error for r in results)
-    
+
     # Cleanup
     if manager._client:
         manager._client.close()
 
 
-def test_add_widgets():
-    from qtpy.QtWidgets import QVBoxLayout, QWidget, QApplication
-    import sys
-    
-    # Qt requires an application instance
+def test_get_value_from_widget_dropdown():
     _ = QApplication.instance() or QApplication(sys.argv)
-    
+    image = Image(data=np.arange(100).reshape((10, 10)))
+    layer_name = "test"
+    viewer = SimpleNamespace(layers={layer_name: image})
+    widget = QComboBox()
+    widget.addItems([layer_name])
+    widget.setCurrentText(layer_name)
+    arg = Argument("", "", Image, None)
+    value = get_value_from_widget(widget, arg, viewer)
+    assert value is image
+
+
+def test_get_value_from_widget_line():
+    _ = QApplication.instance() or QApplication(sys.argv)
+    widget = QLineEdit("100.0")
+    arg = Argument("", "", float, None)
+    value = get_value_from_widget(widget, arg, None)
+    assert value == 100.0
+
+
+def test_get_args():
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    def test_gen(*args):
+        yield "test"
+        return "test2"
+
+    gbf = GuiBackgroundFunction[str].create(
+        "",
+        test_gen,
+        print,
+        (
+            Argument("", "", float, 0.1),
+            Argument("", "", int, 2),
+            Argument("", "", str, "three"),
+        ),
+        None,
+    )
+    assert (0.1, 2, "three") == gbf.get_values()
+
+
+def test_function_works():
+    _ = QApplication.instance() or QApplication(sys.argv)
+    zero_collection = list[int]()
+
+    def test_gen(*args):
+        yield "test"
+        return 0
+
+    def return_callback(zero: int):
+        zero_collection.append(zero)
+
+    gbf = GuiBackgroundFunction[int].create(
+        "",
+        test_gen,
+        return_callback,
+        (
+            Argument("", "", float, 0.1),
+            Argument("", "", int, 2),
+            Argument("", "", str, "three"),
+        ),
+        None,
+    )
+    assert not tuple(zero_collection)
+    gbf.run_blocking()
+    assert tuple(zero_collection) == (0,)
+
+
+def test_add_widgets():
+    _ = QApplication.instance() or QApplication(sys.argv)
     error_strings: list[str] = []
+
     def callback(value: str):
         error_strings.append(value)
-    
+
     # Create a layout to add widgets to
     widget = QWidget()
     layout = QVBoxLayout()
     widget.setLayout(layout)
-    
-    # Test with exe_name provided
-    manager = add_widgets(
-        layout, 
-        callback, 
-        exe_name=f"{sys.executable} {str(HERE / 'server.py')}"
+
+    manager = ConnectionManager.create(
+        callback, "localhost", (f"{sys.executable} {str(HERE / 'server.py')}")
     )
-    
+
+    # Test with exe_name provided
+    manager.get_gui_background_function().add_widgets(layout)
+
     assert isinstance(manager, ConnectionManager)
-    assert manager.host_name.text() == ""  # Default empty
-    assert manager.exe.text() == f"{sys.executable} {str(HERE / 'server.py')}"
-    
-    # Set hostname and test connection
-    manager.host_name.setText("localhost")
-    
+
     with manager as client:
         assert client is not None
+        assert client.host_name == "localhost"
+        assert tuple(client.command) == (sys.executable, str(HERE / "server.py"))
         assert client.working_path is not None
-        assert "Connected:" in manager.label.text()
-    
-    # Test without exe_name (should show exe input field)
-    layout2 = QVBoxLayout()
-    widget2 = QWidget()
-    widget2.setLayout(layout2)
-    
-    manager2 = add_widgets(layout2, callback, exe_name="")
-    assert manager2.exe.text() == ""
-    
+
     # Cleanup
     if manager._client:
         manager._client.close()
