@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qt-remote-commands-over-ssh-for-napari-plugins"
-version = "0.1.0"
+version = "0.2.0"
 description = "SSH JSONL messaging utilities for napari"
 authors = [
     { name = "Peter Newstein", email = "peternewstein@gmail.com" }
