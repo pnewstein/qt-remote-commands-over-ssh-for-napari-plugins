@@ -555,17 +555,6 @@ class GuiBackgroundFunction(Generic[T]):
         worker.errored.connect(self._was_error)
         worker.start()
 
-    def run_blocking(self):
-        """
-        Execute the function synchronously in the current thread
-        """
-        iterator = self.background_callback(*self.get_values())
-        try:
-            while True:
-                self.status.setText(next(iterator))
-        except StopIteration as e:
-            self.returned_callback(e.value)
-
 
 @dataclass(frozen=True, slots=True)
 class ConnectOut:
@@ -697,10 +686,8 @@ class ConnectionManager:
             raise error
         if self._client is not None and self._client.is_alive():
             return self._client
-        gbf = self.get_gui_background_function()
-        gbf.run_blocking()
-        assert self._client is not None
-        return self._client
+        self._lock.release()
+        raise ValueError("First connect to a server")
 
     def __exit__(self, *_args):
         """
