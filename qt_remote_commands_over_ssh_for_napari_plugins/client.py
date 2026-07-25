@@ -143,6 +143,8 @@ class Client:
         Start the subprocess, spawn reader threads, and wait for the initial Response being the
         remote working path
         """
+        logger.debug("running from command args")
+
         cmd_list = list(command)
         command_with_ssh = ["ssh"] + list(ssh_args) + [host] + cmd_list
         output_queue: queue.Queue[Response] = queue.Queue()
@@ -530,6 +532,10 @@ class GuiBackgroundFunction(Generic[T]):
         self.submit_button.setChecked(False)
         self.submit_button.setEnabled(True)
 
+    def _was_error(self, *args):
+        _ = args
+        self.status.setText("ERROR")
+
     def submit(self, *args):
         """
         callback for clicking the submit button
@@ -546,6 +552,7 @@ class GuiBackgroundFunction(Generic[T]):
         worker.yielded.connect(self.status.setText)
         worker.returned.connect(self.returned_callback)
         worker.finished.connect(self._reset_button)
+        worker.errored.connect(self._was_error)
         worker.start()
 
     def run_blocking(self):
@@ -668,6 +675,7 @@ class ConnectionManager:
             "-o",
             "StrictHostKeyChecking=no",
         ]
+        logger.debug(ssh_args)
         client = Client.from_cmd_args(
             ssh_args,
             host_name,
