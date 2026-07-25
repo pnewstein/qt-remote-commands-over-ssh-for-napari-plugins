@@ -38,5 +38,5 @@ dev = [
     "pytest",
 ]
 client = [
-    "PyQt5", "napari"
+    "PyQt6", "napari"
 ]
