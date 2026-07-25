@@ -10,6 +10,9 @@ from pathlib import Path
 import tempfile
 import secrets
 import logging
+import os
+
+
 from .common import Response, send_with_logging, from_string
 
 __all__ = ["send_with_logging", "from_string", "to_string", "main_loop"]
@@ -33,7 +36,11 @@ def main_loop(callback: Callable[[str, Path], Response]):
     """
     # first initialize connection by creating a path
     while True:
-        session_path = Path(tempfile.gettempdir()) / secrets.token_urlsafe(5)
+        try:
+            temp_dir = os.environ["TEMP_DIR"]
+        except KeyError:
+            temp_dir = tempfile.gettempdir()
+        session_path = Path(temp_dir) / secrets.token_urlsafe(5)
         try:
             session_path.mkdir(exist_ok=False)
             break

@@ -32,6 +32,11 @@ The package handles SSH connection pooling, file transfers (via scp), and
 thread synchronization so multiple UI operations can safely share a single
 connection.
 
+## Configuration
+to change the tempdir location on the server where sessions are stored, use the
+environmental variable TEMP_DIR
+
+
 ## Example 
 
 See the included example which demonstrates:
