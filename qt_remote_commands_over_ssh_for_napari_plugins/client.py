@@ -555,6 +555,17 @@ class GuiBackgroundFunction(Generic[T]):
         worker.errored.connect(self._was_error)
         worker.start()
 
+    def run_blocking(self):
+        """
+        Execute the function synchronously in the current thread
+        """
+        iterator = self.background_callback(*self.get_values())
+        try:
+            while True:
+                self.status.setText(next(iterator))
+        except StopIteration as e:
+            self.returned_callback(e.value)
+
 
 @dataclass(frozen=True, slots=True)
 class ConnectOut:
@@ -630,6 +641,14 @@ class ConnectionManager:
             connect_out: Connection result data
         """
         self._client = connect_out.client
+
+    def connect(self):
+        """
+        connects to the server. 
+        after calling this, self becomes enterable
+        """
+        self.get_gui_background_function().run_blocking()
+
 
     def get_gui_background_function(self) -> GuiBackgroundFunction[ConnectOut]:
         """

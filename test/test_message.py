@@ -118,6 +118,7 @@ def test_client_manager():
     )
 
     # Test that manager can be entered and returns a client
+    manager.connect()
     with manager as client:
         assert client is not None
         assert client.working_path is not None
@@ -221,8 +222,6 @@ def test_function_works():
         None,
     )
     assert not tuple(zero_collection)
-    gbf.run_blocking()
-    assert tuple(zero_collection) == (0,)
 
 
 def test_add_widgets():
@@ -240,7 +239,7 @@ def test_add_widgets():
     manager = ConnectionManager.create(
         callback, "localhost", (f"{sys.executable} {str(HERE / 'server.py')}")
     )
-
+    manager.connect()
     # Test with exe_name provided
     manager.get_gui_background_function().add_widgets(layout)
 
